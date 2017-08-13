@@ -180,6 +180,7 @@ const liveTradingSetup = () : SimulationClasses => {
             case "okcoin": return Models.Exchange.OkCoin;
             case "null": return Models.Exchange.Null;
             case "bitfinex": return Models.Exchange.Bitfinex;
+            case "gatecoin": return Models.Exchange.Gatecoin;
             default: throw new Error("unknown configuration env variable EXCHANGE " + ex);
         }
     };
