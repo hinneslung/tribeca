@@ -29,13 +29,6 @@ import GatecoinInterfaces = require('./gatecoin-api');
  * Market Data Gateway
  */
 
-
-interface GatecoinMarketLevel {
-    price: string;
-    amount: string;
-}
-
-
 function decodeSide(side: string) {
     switch (side) {
         case "bid": return Models.Side.Bid;
@@ -44,29 +37,7 @@ function decodeSide(side: string) {
     }
 }
 
-function encodeSide(side: Models.Side) {
-    switch (side) {
-        case Models.Side.Bid: return "bid";
-        case Models.Side.Ask: return "ask";
-        default: return "";
-    }
-}
-
-function encodeTimeInForce(tif: Models.TimeInForce, type: Models.OrderType) {
-    if (type === Models.OrderType.Market) {
-        return "exchange market";
-    }
-    else if (type === Models.OrderType.Limit) {
-        if (tif === Models.TimeInForce.FOK) return "exchange fill-or-kill";
-        if (tif === Models.TimeInForce.GTC) return "exchange limit";
-    }
-    throw new Error("unsupported tif " + Models.TimeInForce[tif] + " and order type " + Models.OrderType[type]);
-}
-
 class GatecoinMarketDataGateway implements Interfaces.IMarketDataGateway {
-    /**
-     * MARK
-     */
     ConnectChanged = new Utils.Evt<Models.ConnectivityStatus>();
 
     private _since: number = null;
@@ -130,6 +101,9 @@ class GatecoinMarketDataGateway implements Interfaces.IMarketDataGateway {
  * Order Entry Gateway
  */
 
+interface OpenOrderBook {
+    [id: string] : Models.OrderStatusReport;
+}
 
 class GatecoinOrderEntryGateway implements Interfaces.IOrderEntryGateway {
     OrderUpdate = new Utils.Evt<Models.OrderStatusUpdate>();
@@ -142,17 +116,20 @@ class GatecoinOrderEntryGateway implements Interfaces.IOrderEntryGateway {
 
     public cancelsByClientOrderId = false;
 
+    private openOrderBook: OpenOrderBook;
+
     sendOrder = (order: Models.OrderStatusReport) => {
         (order.side === Models.Side.Bid ?
             this._http.api.createLimitBuyOrder(this._symbolProvider.symbol, order.quantity, order.price) :
             this._http.api.createLimitSellOrder(this._symbolProvider.symbol, order.quantity, order.price)
         )
             .then(res => {
+                this.openOrderBook[res.id] = order;
                 this.OrderUpdate.trigger({
                     orderId: order.orderId,
                     exchangeId: res.id,
                     time: new Date(),
-                    orderStatus: Models.OrderStatus.Working
+                    orderStatus: Models.OrderStatus.New
                 });
             })
             .catch(err => {
@@ -175,6 +152,7 @@ class GatecoinOrderEntryGateway implements Interfaces.IOrderEntryGateway {
     cancelOrder = (cancel: Models.OrderStatusReport) => {
         this._http.api.cancelOrder(cancel.exchangeId)
             .then(resp => {
+                delete this.openOrderBook[cancel.exchangeId];
                 this.OrderUpdate.trigger({
                     orderId: cancel.orderId,
                     time: new Date(),
@@ -206,13 +184,22 @@ class GatecoinOrderEntryGateway implements Interfaces.IOrderEntryGateway {
     private downloadOrderStatuses = () => {
         this._http.api.fetchMyOrders()
             .then(res => {
-                _.forEach(res.orders.data, order => {
+                let exchangeOrderIds = Object.keys(this.openOrderBook);
+                _.forEach(_.filter(res.orders.data, x => x.code === this._symbolProvider.code), order => {
+                    exchangeOrderIds.splice(exchangeOrderIds.indexOf(order.clOrderId), 1);
                     this.OrderUpdate.trigger({
                         exchangeId: order.clOrderId,
                         lastPrice: order.price,
                         orderStatus: GatecoinOrderEntryGateway.decodeOrderStatus(order.statusDesc),
                         cumQuantity: order.remainingQuantity,
                         quantity: order.initialQuantity
+                    })
+                });
+                _.forEach(exchangeOrderIds, exchangeOrderId => {
+                    delete this.openOrderBook[exchangeOrderId];
+                    this.OrderUpdate.trigger({
+                        exchangeId: exchangeOrderId,
+                        orderStatus: Models.OrderStatus.Complete
                     })
                 });
             }).done();
@@ -294,13 +281,6 @@ class GatecoinHttp {
  * Position Gateway
  */
 
-interface GatecoinPositionResponseItem {
-    type: string;
-    currency: string;
-    amount: string;
-    available: string;
-}
-
 class GatecoinPositionGateway implements Interfaces.IPositionGateway {
     PositionUpdate = new Utils.Evt<Models.CurrencyPosition>();
 
@@ -325,6 +305,10 @@ class GatecoinPositionGateway implements Interfaces.IPositionGateway {
         this.onRefreshPositions();
     }
 }
+
+/**
+ * Exchange Gateway
+ */
 
 class GatecoinBaseGateway implements Interfaces.IExchangeDetailsGateway {
     public get hasSelfTradePrevention() {
@@ -352,9 +336,11 @@ class GatecoinBaseGateway implements Interfaces.IExchangeDetailsGateway {
 
 class GatecoinSymbolProvider {
     public symbol: string;
+    public code: string;
 
     constructor(pair: Models.CurrencyPair) {
         this.symbol = pair.toString();
+        this.code = Models.Currency[pair.base] + Models.Currency[pair.quote] + "";
     }
 }
 
@@ -376,30 +362,19 @@ class Gatecoin extends Interfaces.CombinedGateway {
     }
 }
 
-interface SymbolDetails {
-    symbol: string,
-    info: {
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-    };
-}
-
 let countDecimals = function (value) {
     if(Math.floor(value) === value) return 0;
     return value.toString().split(".")[1].length || 0;
 };
 
 export async function createGatecoin(timeProvider: Utils.ITimeProvider, config: Config.IConfigProvider, pair: Models.CurrencyPair) : Promise<Interfaces.CombinedGateway> {
-    const detailsUrl = config.GetString("GatecoinHttpUrl")+"/symbols_details";
-    const symbolDetails = await Utils.getJSON<SymbolDetails[]>(detailsUrl);
+    const symbolDetails = await ccxt.gatecoin().loadMarkets();
     const symbol = new GatecoinSymbolProvider(pair);
 
     for (let s of symbolDetails) {
         if (s.symbol === symbol.symbol) {
             let precision = Math.max(countDecimals(s.info.open), countDecimals(s.info.high), countDecimals(s.info.low));
-            return new Gatecoin(timeProvider, config, symbol, precision);
+            return new Gatecoin(timeProvider, config, symbol, 10**(-1 * precision));
         }
     }
 

@@ -20,8 +20,9 @@ interface TradesResponse {
 }
 
 export interface MyOrder {
-    clOrderId: string,
-    side: number,
+    clOrderId: string;
+    code: string;
+    side: number;
     price: number;
     initialQuantity: number;
     remainingQuantity: number;
@@ -57,7 +58,25 @@ interface BalanceResponse {
     ETH: Balance;
 }
 
+interface SymbolDetails {
+    symbol: string,
+    info: {
+        open: number;
+        high: number;
+        low: number;
+        close: number;
+    };
+}
+
+interface ExchangeDetailsResponse {
+    'BCH/USD': SymbolDetails,
+    'BCH/HKD': SymbolDetails,
+    'ETH/USD': SymbolDetails,
+    'ETH/HKD': SymbolDetails
+}
+
 export interface API {
+    fetchExchangeDetails(): Q.Promise<ExchangeDetailsResponse>
     fetchBalance(): Q.Promise<BalanceResponse>;
 
     fetchTrades(symbol: string): Q.Promise<TradesResponse>;
