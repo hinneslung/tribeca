@@ -58,7 +58,8 @@ export class MarketTrade implements ITimestamped {
                 public make_side: Side) {}
 }
 
-export enum Currency { 
+export enum Currency {
+    HKD,
     USD, 
     BTC, 
     LTC, 
@@ -103,7 +104,7 @@ export function fromCurrency(c: Currency) : string|undefined {
 
 export enum GatewayType { MarketData, OrderEntry, Position }
 export enum ConnectivityStatus { Connected, Disconnected }
-export enum Exchange { Null, HitBtc, OkCoin, AtlasAts, BtcChina, Coinbase, Bitfinex }
+export enum Exchange { Null, HitBtc, OkCoin, AtlasAts, BtcChina, Coinbase, Bitfinex, Gatecoin }
 export enum Side { Bid, Ask, Unknown }
 export enum OrderType { Limit, Market }
 export enum TimeInForce { IOC, FOK, GTC }

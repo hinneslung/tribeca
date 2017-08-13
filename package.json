@@ -37,6 +37,7 @@
     "body-parser": "1.17.1",
     "bufferutil": "^1.2.1",
     "bunyan": "1.8.10",
+    "ccxt": "https://github.com/hinneslung/ccxt/tarball/master",
     "collections": "5.0.6",
     "compression": "1.6.2",
     "connect": "3.6.0",

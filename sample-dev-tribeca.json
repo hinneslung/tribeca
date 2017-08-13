@@ -31,5 +31,9 @@
     "BitfinexHttpUrl": "https://api.bitfinex.com/v1",
     "BitfinexKey": "NULL",
     "BitfinexSecret": "NULL",
-    "BitfinexOrderDestination": "Bitfinex"
+    "BitfinexOrderDestination": "Bitfinex",
+
+    "GatecoinKey": "NULL",
+    "GatecoinSecret": "NULL",
+    "GatecoinOrderDestination": "Gatecoin"
 }
