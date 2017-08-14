@@ -16,7 +16,7 @@ export interface Trade {
 }
 
 interface TradesResponse {
-    transactions: Models.Timestamped<Trade[]>;
+    transactions: Trade[];
 }
 
 export interface MyOrder {
@@ -36,7 +36,7 @@ interface CreateOrderResponse extends RejectableResponse {
 }
 
 interface MyOrdersResponse {
-    orders: Models.Timestamped<MyOrder[]>;
+    orders: MyOrder[];
 }
 
 export interface OrderBookResponse {
@@ -58,6 +58,13 @@ interface BalanceResponse {
     ETH: Balance;
 }
 
+interface ExchangeDetailsResponse {
+    'BCH/USD': SymbolDetails,
+    'BCH/HKD': SymbolDetails,
+    'ETH/USD': SymbolDetails,
+    'ETH/HKD': SymbolDetails
+}
+
 interface SymbolDetails {
     symbol: string,
     info: {
@@ -68,24 +75,17 @@ interface SymbolDetails {
     };
 }
 
-interface ExchangeDetailsResponse {
-    'BCH/USD': SymbolDetails,
-    'BCH/HKD': SymbolDetails,
-    'ETH/USD': SymbolDetails,
-    'ETH/HKD': SymbolDetails
-}
-
 export interface API {
-    fetchExchangeDetails(): Q.Promise<ExchangeDetailsResponse>
+    loadMarkets():Promise<ExchangeDetailsResponse>
+    fetchBalance(): Promise<BalanceResponse>;
+
+    fetchTrades(symbol: string): Promise<TradesResponse>;
+    fetchOrderBook(symbol: string): Promise<OrderBookResponse>;
     fetchBalance(): Q.Promise<BalanceResponse>;
 
-    fetchTrades(symbol: string): Q.Promise<TradesResponse>;
-    fetchOrderBook(symbol: string): Q.Promise<OrderBookResponse>;
-    fetchBalance(): Q.Promise<BalanceResponse>;
+    createLimitBuyOrder(symbol: string, amount: number, price: number): Promise<CreateOrderResponse>;
+    createLimitSellOrder(symbol: string, amount: number, price: number): Promise<CreateOrderResponse>;
 
-    createLimitBuyOrder(symbol: string, amount: number, price: number): Q.Promise<CreateOrderResponse>;
-    createLimitSellOrder(symbol: string, amount: number, price: number): Q.Promise<CreateOrderResponse>;
-
-    fetchMyOrders(): Q.Promise<MyOrdersResponse>;
-    cancelOrder(id: string): Q.Promise<any>;
+    fetchMyOpenOrders(): Promise<MyOrdersResponse>;
+    cancelOrder(id: string): Promise<any>;
 }

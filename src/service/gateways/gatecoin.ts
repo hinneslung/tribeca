@@ -38,12 +38,13 @@ function decodeSide(side: string) {
 }
 
 class GatecoinMarketDataGateway implements Interfaces.IMarketDataGateway {
+    private _log = log("tribeca:gateway:GatecoinMDG");
     ConnectChanged = new Utils.Evt<Models.ConnectivityStatus>();
 
     private _since: number = null;
     MarketTrade = new Utils.Evt<Models.GatewayMarketTrade>();
-    private onTrades = (trades: Models.Timestamped<GatecoinInterfaces.Trade[]>) => {
-        _.forEach(trades.data, trade => {
+    private onTrades = (trades: GatecoinInterfaces.Trade[]) => {
+        _.forEach(trades, trade => {
             let px = trade.price;
             let sz = trade.quantity;
             let time = moment.unix(parseInt(trade.transactionTime)).toDate();
@@ -77,9 +78,10 @@ class GatecoinMarketDataGateway implements Interfaces.IMarketDataGateway {
     };
 
     private downloadMarketData = () => {
+
         this._http.api.fetchOrderBook(this._symbolProvider.symbol)
             .then(res => this.onMarketData(res.asks, res.bids))
-            .done();
+            .catch(this._log.error)
     };
 
     constructor(
@@ -119,6 +121,8 @@ class GatecoinOrderEntryGateway implements Interfaces.IOrderEntryGateway {
     private openOrderBook: OpenOrderBook;
 
     sendOrder = (order: Models.OrderStatusReport) => {
+        console.log(order.side);
+        console.log(order.side === Models.Side.Bid);
         (order.side === Models.Side.Bid ?
             this._http.api.createLimitBuyOrder(this._symbolProvider.symbol, order.quantity, order.price) :
             this._http.api.createLimitSellOrder(this._symbolProvider.symbol, order.quantity, order.price)
@@ -140,8 +144,7 @@ class GatecoinOrderEntryGateway implements Interfaces.IOrderEntryGateway {
                     time: new Date()
                 });
                 return;
-            })
-            .done();
+            });
 
         this.OrderUpdate.trigger({
             orderId: order.orderId,
@@ -168,7 +171,6 @@ class GatecoinOrderEntryGateway implements Interfaces.IOrderEntryGateway {
                     time: new Date()
                 });
             })
-            .done();
 
         this.OrderUpdate.trigger({
             orderId: cancel.orderId,
@@ -182,17 +184,18 @@ class GatecoinOrderEntryGateway implements Interfaces.IOrderEntryGateway {
     };
 
     private downloadOrderStatuses = () => {
-        this._http.api.fetchMyOrders()
+        this._http.api.fetchMyOpenOrders()
             .then(res => {
                 let exchangeOrderIds = Object.keys(this.openOrderBook);
-                _.forEach(_.filter(res.orders.data, x => x.code === this._symbolProvider.code), order => {
+                _.forEach(_.filter(res.orders, x => x.code === this._symbolProvider.code), order => {
                     exchangeOrderIds.splice(exchangeOrderIds.indexOf(order.clOrderId), 1);
                     this.OrderUpdate.trigger({
                         exchangeId: order.clOrderId,
                         lastPrice: order.price,
                         orderStatus: GatecoinOrderEntryGateway.decodeOrderStatus(order.statusDesc),
-                        cumQuantity: order.remainingQuantity,
-                        quantity: order.initialQuantity
+                        quantity: order.initialQuantity,
+                        cumQuantity: order.initialQuantity - order.remainingQuantity,
+                        leavesQuantity: order.remainingQuantity,
                     })
                 });
                 _.forEach(exchangeOrderIds, exchangeOrderId => {
@@ -202,7 +205,8 @@ class GatecoinOrderEntryGateway implements Interfaces.IOrderEntryGateway {
                         orderStatus: Models.OrderStatus.Complete
                     })
                 });
-            }).done();
+            })
+            .catch(this._log.error);
 
         this._since = moment.utc();
     };
@@ -296,7 +300,7 @@ class GatecoinPositionGateway implements Interfaces.IPositionGateway {
                     this.PositionUpdate.trigger(rpt);
                 });
             })
-            .done();
+            .catch(this._log.error);
     };
 
     private _log = log("tribeca:gateway:GatecoinPG");
@@ -368,10 +372,12 @@ let countDecimals = function (value) {
 };
 
 export async function createGatecoin(timeProvider: Utils.ITimeProvider, config: Config.IConfigProvider, pair: Models.CurrencyPair) : Promise<Interfaces.CombinedGateway> {
-    const symbolDetails = await ccxt.gatecoin().loadMarkets();
+    let api: GatecoinInterfaces.API = ccxt.gatecoin();
+    const symbolDetails = await api.loadMarkets();
     const symbol = new GatecoinSymbolProvider(pair);
 
-    for (let s of symbolDetails) {
+    for (let key in symbolDetails) {
+        let s = symbolDetails[key];
         if (s.symbol === symbol.symbol) {
             let precision = Math.max(countDecimals(s.info.open), countDecimals(s.info.high), countDecimals(s.info.low));
             return new Gatecoin(timeProvider, config, symbol, 10**(-1 * precision));
